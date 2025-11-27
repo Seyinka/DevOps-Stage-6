@@ -6,7 +6,7 @@ RUN rm -f package-lock.json && npm install --legacy-peer-deps
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve with http-server
+# Stage 2: Serve with the http-server
 FROM node:16-alpine
 WORKDIR /app
 RUN npm install -g http-server

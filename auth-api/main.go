@@ -13,6 +13,7 @@ import (
 	gommonlog "github.com/labstack/gommon/log"
 )
 
+
 var (
 	// ErrHttpGenericMessage that is returned in general case, details should be logged in such case
 	ErrHttpGenericMessage = echo.NewHTTPError(http.StatusInternalServerError, "something went wrong, please try again later")

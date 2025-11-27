@@ -1,12 +1,5 @@
-FROM maven:3.9-eclipse-temurin-21 AS builder
+FROM eclipse-temurin:8-jre-alpine
 WORKDIR /app
-COPY pom.xml ./
-RUN mvn dependency:resolve
-COPY . ./
-RUN mvn clean package -DskipTests
-
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-COPY --from=builder /app/target/*.jar app.jar
-EXPOSE 8003
-CMD ["java", "-jar", "app.jar"]
+COPY target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
