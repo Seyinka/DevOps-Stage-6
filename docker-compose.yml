@@ -1,0 +1,111 @@
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-network
+
+  auth-api:
+    build:
+      context: ./auth-api
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=development
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    # For development, rebuild on code changes
+    volumes:
+      - ./auth-api:/app
+
+  todos-api:
+    build:
+      context: ./todos-api
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - REDIS_URL=redis://redis:6379
+      - AUTH_API_URL=http://auth-api:8001
+      - NODE_ENV=development
+    depends_on:
+      - redis
+      - auth-api
+    networks:
+      - app-network
+    volumes:
+      - ./todos-api:/app
+
+  users-api:
+    build:
+      context: ./users-api
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - SERVER_PORT=8003
+      - REDIS_URL=redis://redis:6379
+      - ENVIRONMENT=dev
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    volumes:
+      - ./users-api:/app
+
+  log-message-processor:
+    build:
+      context: ./log-message-processor
+      dockerfile: Dockerfile
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    volumes:
+      - ./log-message-processor:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VUE_APP_API_URL=http://localhost:8001
+      - VUE_APP_TODOS_URL=http://localhost:8002
+      - VUE_APP_USERS_URL=http://localhost:8003
+    depends_on:
+      - auth-api
+      - todos-api
+      - users-api
+    networks:
+      - app-network
+    volumes:
+      - ./frontend:/app
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  redis_data:
