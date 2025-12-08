@@ -25,7 +25,7 @@ provider "aws" {
 # SSH Key Pair
 resource "aws_key_pair" "ssh_key" {
   key_name   = var.key_name
-  public_key = var.ssh_public_key  
+ # public_key = var.ssh_public_key  
 
   lifecycle {
     create_before_destroy = true
@@ -103,11 +103,16 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+data "aws_key_pair" "ssh_key" {
+  key_name = "hng-key"
+}
+
+
 # EC2 Instance for App
 resource "aws_instance" "todo_app_server" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
-  key_name               = aws_key_pair.ssh_key.key_name
+  key_name               = data.aws_key_pair.ssh_key.key_name
   vpc_security_group_ids = [aws_security_group.todo_app.id]
 
   root_block_device {
