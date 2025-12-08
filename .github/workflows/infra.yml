@@ -59,7 +59,7 @@ jobs:
         id: plan
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          terraform plan -detailed-exitcode -out=tfplan 2>&1 | tee plan_output.txt || true
+          terraform plan -detailed-exitcode -out=tfplan 2>&1 | tee plan_output.txt
           
           if grep -q "Plan: 0 to add, 0 to change, 0 to destroy" plan_output.txt; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
