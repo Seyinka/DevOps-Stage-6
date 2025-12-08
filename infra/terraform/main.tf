@@ -26,7 +26,13 @@ provider "aws" {
 resource "aws_key_pair" "ssh_key" {
   key_name   = var.key_name
   public_key = var.ssh_public_key  # Use the variable directly, not file()
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes  = 
+  }
 }
+
 
 # Get default VPC
 data "aws_vpc" "default" {
@@ -108,6 +114,7 @@ resource "aws_instance" "todo_app_server" {
   tags = {
     Name = var.app_name
     App  = var.app_name
+    description = "todo-app"
   }
 
   lifecycle {
