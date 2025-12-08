@@ -29,7 +29,6 @@ resource "aws_key_pair" "ssh_key" {
 
   lifecycle {
     create_before_destroy = true
-    ignore_changes  = 
   }
 }
 
