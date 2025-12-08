@@ -58,15 +58,16 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           cat > terraform.tfvars <<EOF
-          aws_region        = "${{ env.AWS_REGION }}"
-          instance_type     = "t2.small"
-          key_name          = "${{ secrets.AWS_KEY_NAME }}"
-          app_domain        = "seyitan.mooo.com"
-          ssh_public_key    = "${{ secrets.SSH_PUBLIC_KEY }}"
-          email_alerts      = "${{ secrets.EMAIL_FOR_ALERTS }}"
-          app_repo_url      = "${{ github.server_url }}/${{ github.repository }}"
-          ssh_allowed_cidr  = "0.0.0.0/0"
-          root_volume_size  = 20
+          aws_region           = "${{ env.AWS_REGION }}"
+          instance_type        = "t2.small"
+          key_name             = "${{ secrets.AWS_KEY_NAME }}"
+          app_domain           = "seyitan.mooo.com"
+          ssh_public_key       = "${{ secrets.SSH_PUBLIC_KEY }}"
+          ssh_private_key_path = "~/.ssh/id_rsa"
+          email_alerts         = "${{ secrets.EMAIL_FOR_ALERTS }}"
+          app_repo_url         = "${{ github.server_url }}/${{ github.repository }}"
+          ssh_allowed_cidr     = "0.0.0.0/0"
+          root_volume_size     = 20
           EOF
           
           echo "terraform.tfvars created"
@@ -217,15 +218,16 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           cat > terraform.tfvars <<EOF
-          aws_region        = "${{ env.AWS_REGION }}"
-          instance_type     = "t2.medium"
-          key_name          = "${{ secrets.AWS_KEY_NAME }}"
-          app_domain        = "seyitan.mooo.com"
-          ssh_public_key    = "${{ secrets.SSH_PUBLIC_KEY }}"
-          email_alerts      = "${{ secrets.EMAIL_FOR_ALERTS }}"
-          app_repo_url      = "${{ github.server_url }}/${{ github.repository }}"
-          ssh_allowed_cidr  = "0.0.0.0/0"
-          root_volume_size  = 20
+          aws_region           = "${{ env.AWS_REGION }}"
+          instance_type        = "t2.medium"
+          key_name             = "${{ secrets.AWS_KEY_NAME }}"
+          app_domain           = "mytodos.mooo.com"
+          ssh_public_key       = "${{ secrets.SSH_PUBLIC_KEY }}"
+          ssh_private_key_path = "~/.ssh/id_rsa"
+          email_alerts         = "${{ secrets.EMAIL_FOR_ALERTS }}"
+          app_repo_url         = "${{ github.server_url }}/${{ github.repository }}"
+          ssh_allowed_cidr     = "0.0.0.0/0"
+          root_volume_size     = 20
           EOF
 
       - name: Terraform Init

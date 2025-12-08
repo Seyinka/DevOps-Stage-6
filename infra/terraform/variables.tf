@@ -62,3 +62,8 @@ variable "root_volume_size" {
   default     = 20
 }
 
+variable "ssh_private_key_path" {
+  description = "Path to SSH private key"
+  type        = string
+  default     = "~/.ssh/id_rsa"
+}
