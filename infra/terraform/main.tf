@@ -23,14 +23,14 @@ provider "aws" {
 }
 
 # SSH Key Pair
-resource "aws_key_pair" "ssh_key" {
-  key_name   = var.key_name
-  public_key = var.ssh_public_key  
+#resource "aws_key_pair" "ssh_key" {
+ # key_name   = var.key_name
+  #public_key = var.ssh_public_key  
 
-  lifecycle {
-    create_before_destroy = true
-  }
-}
+ # lifecycle {
+  #  create_before_destroy = true
+ # }
+#}
 
 variable "ssh_public_key_path" {
   description = "Path to the SSH public key"
