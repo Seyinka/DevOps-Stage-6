@@ -9,6 +9,11 @@ on:
       - 'infra/ansible/**'
   workflow_dispatch:
 
+# Ensure only one Terraform run at a time
+concurrency:
+  group: terraform-devops-stage6
+  cancel-in-progress: true
+
 env:
   AWS_REGION: us-west-1
   TF_VERSION: 1.6.0
@@ -20,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
-  
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,11 +45,6 @@ jobs:
       - name: Terraform Init
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform init
-
-      - name: Force unlock state if locked
-        working-directory: ${{ env.WORKING_DIR }}
-        run: |
-          terraform force-unlock -force $(terraform state list -state=terraform.tfstate 2>/dev/null || echo "")
 
       - name: Create terraform.tfvars
         working-directory: ${{ env.WORKING_DIR }}
@@ -66,8 +66,10 @@ jobs:
         run: |
           set -e
           terraform plan -detailed-exitcode -out=tfplan
+
           PLAN_SUMMARY=$(terraform show -no-color tfplan | head -20)
           echo "$PLAN_SUMMARY"
+
           if grep -q "No changes. Infrastructure is up-to-date." <<< "$PLAN_SUMMARY"; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
@@ -84,3 +86,75 @@ jobs:
           name: tfplan
           path: ${{ env.WORKING_DIR }}/tfplan
           retention-days: 5
+
+  terraform-apply:
+    name: Terraform Apply
+    needs: terraform-plan
+    if: needs.terraform-plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -auto-approve
+
+      - name: Capture Terraform Outputs
+        id: outputs
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          echo "instance_ip=$(terraform output -raw server_public_ip)" >> $GITHUB_OUTPUT
+          echo "application_url=$(terraform output -raw app_domain)" >> $GITHUB_OUTPUT
+
+      - name: Send Success Email
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Infrastructure Deployment Successful"
+          to: ${{ secrets.EMAIL_FOR_ALERTS }}
+          from: DevOps Automation <${{ secrets.SMTP_USERNAME }}>
+          body: |
+            Infrastructure deployment completed successfully!
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Instance IP: ${{ steps.outputs.outputs.instance_ip }}
+            Application URL: ${{ steps.outputs.outputs.application_url }}
+
+      - name: Send Failure Email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Infrastructure Deployment Failed"
+          to: ${{ secrets.EMAIL_FOR_ALERTS }}
+          from: DevOps Automation <${{ secrets.SMTP_USERNAME }}>
+          body: |
+            Infrastructure deployment failed!
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Check workflow logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
