@@ -1,0 +1,64 @@
+---
+- name: Deploy TODO Microservices Application
+  hosts: app_servers
+  gather_facts: yes
+  become: yes
+
+  vars:
+    docker_compose_version: "5.0.0"
+
+  roles:
+    - role: dependencies
+      tags: [dependencies, setup]
+      become: yes
+
+    - role: deploy
+      tags: [deploy, app]
+      become: yes  
+    
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          =====================================================
+          Deploying TODO Application
+          =====================================================
+          Target: {{ inventory_hostname }} ({{ ansible_host }})
+          Domain: {{ app_domain }}
+          Repository: {{ repo_url }}
+          Branch: {{ repo_branch }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          =====================================================
+
+    - name: Wait for system to be ready
+      wait_for_connection:
+        delay: 10
+        timeout: 300
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Ensure services are running
+      shell: docker ps    
+      register: docker_status
+      changed_when: false
+
+    - name: Display Docker status
+      debug:
+        var: docker_status.stdout_lines
+
+
+
+#  handlers:
+ #   - name: Restart Docker
+#      systemd:
+ #       name: docker
+ #       state: restarted
+
+ #   - name: Restart services
+  #    shell: |
+   #     cd {{ app_directory }}
+   #     docker compose restart
+   #   become_user: ubuntu

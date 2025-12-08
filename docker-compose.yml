@@ -13,6 +13,10 @@ services:
       - "traefik.http.routers.frontend.entrypoints=web,websecure"
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+
+      - "traefik.http.routers.frontend-http.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend-http.entrypoints=web"
+      - "traefik.http.routers.frontend-http.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
   
   auth-api:
@@ -30,13 +34,21 @@ services:
       - "traefik.http.routers.auth-api.entrypoints=web,websecure"
       - "traefik.http.routers.auth-api.priority=10"
       - "traefik.http.routers.auth-api.middlewares=auth-strip"
-      - "traefik.http.middlewares.auth-strip.stripprefixregex.regex=^/api/auth"
       - "traefik.http.routers.auth-api.tls.certresolver=letsencrypt"
+<<<<<<< HEAD
       # Legacy route for /login and /register (without prefix stripping)
       - "traefik.http.routers.auth-api-legacy.rule=Host(`seyitan.mooo.com`) && (PathPrefix(`/login`) || PathPrefix(`/register`) || PathPrefix(`/verify`))"
       - "traefik.http.routers.auth-api-legacy.entrypoints=web,websecure"
       - "traefik.http.routers.auth-api-legacy.priority=10"
       - "traefik.http.routers.auth-api-legacy.tls.certresolver=letsencrypt"
+=======
+
+      - "traefik.http.routers.auth-api-http.rule=PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.auth-api-http.entrypoints=web"
+      - "traefik.http.routers.auth-api-http.priority=10"
+      - "traefik.http.routers.auth-api-http.middlewares=auth-strip"
+      - "traefik.http.middlewares.auth-strip.stripprefixregex.regex=^/api/auth"
+>>>>>>> 536bd0f (updated files)
       - "traefik.http.services.auth-api.loadbalancer.server.port=8080"
   
   todos-api:
@@ -56,13 +68,21 @@ services:
       - "traefik.http.routers.todos-api.entrypoints=web,websecure"
       - "traefik.http.routers.todos-api.priority=10"
       - "traefik.http.routers.todos-api.middlewares=todos-strip"
-      - "traefik.http.middlewares.todos-strip.stripprefixregex.regex=^/api/todos"
       - "traefik.http.routers.todos-api.tls.certresolver=letsencrypt"
+<<<<<<< HEAD
       # Legacy route for /todos (without prefix stripping)
       - "traefik.http.routers.todos-api-legacy.rule=Host(`seyitan.mooo.com`) && PathPrefix(`/todos`)"
       - "traefik.http.routers.todos-api-legacy.entrypoints=web,websecure"
       - "traefik.http.routers.todos-api-legacy.priority=10"
       - "traefik.http.routers.todos-api-legacy.tls.certresolver=letsencrypt"
+=======
+
+      - "traefik.http.routers.todos-api-http.rule=PathPrefix(`/api/todos`)"
+      - "traefik.http.routers.todos-api-http.entrypoints=web"
+      - "traefik.http.routers.todos-api-http.priority=10"
+      - "traefik.http.routers.todos-api-http.middlewares=todos-strip"
+      - "traefik.http.middlewares.todos-strip.stripprefixregex.regex=^/api"
+>>>>>>> 536bd0f (updated files)
       - "traefik.http.services.todos-api.loadbalancer.server.port=8082"
   
   users-api:
@@ -79,17 +99,28 @@ services:
       - "traefik.http.routers.users-api.entrypoints=web,websecure"
       - "traefik.http.routers.users-api.priority=10"
       - "traefik.http.routers.users-api.middlewares=users-strip"
-      - "traefik.http.middlewares.users-strip.stripprefixregex.regex=^/api/users"
       - "traefik.http.routers.users-api.tls.certresolver=letsencrypt"
+<<<<<<< HEAD
       # Legacy route for /users (without prefix stripping)
       - "traefik.http.routers.users-api-legacy.rule=Host(`seyitan.mooo.com`) && PathPrefix(`/users`)"
       - "traefik.http.routers.users-api-legacy.entrypoints=web,websecure"
       - "traefik.http.routers.users-api-legacy.priority=10"
       - "traefik.http.routers.users-api-legacy.tls.certresolver=letsencrypt"
+=======
+
+      - "traefik.http.routers.users-api-http.rule=PathPrefix(`/api/users`)"
+      - "traefik.http.routers.users-api-http.entrypoints=web"
+      - "traefik.http.routers.users-api-http.priority=10"
+      - "traefik.http.routers.users-api-http.middlewares=users-strip"
+      - "traefik.http.middlewares.users-strip.stripprefixregex.regex=^/api"
+>>>>>>> 536bd0f (updated files)
       - "traefik.http.services.users-api.loadbalancer.server.port=8080"
   
   log-message-processor:
     build: ./log-message-processor
+    depends_on:
+      redis:
+        condition: service_healthy  
     networks:
       - appnet
     environment:
@@ -101,9 +132,20 @@ services:
     image: redis:7-alpine
     networks:
       - appnet
+<<<<<<< HEAD
   
+=======
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+>>>>>>> 536bd0f (updated files)
   traefik:
-    image: traefik:latest
+    image: traefik:3.6.2
     command:
       - --api.insecure=true
       - --providers.docker=true
@@ -112,7 +154,6 @@ services:
       - --entrypoints.websecure.address=:443
       - --certificatesresolvers.letsencrypt.acme.email=syinka44@gmail.com
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
-      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
       - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
     ports:
       - "80:80"
@@ -120,10 +161,16 @@ services:
       - "8080:8080"
     volumes:
       - ./traefik/letsencrypt:/letsencrypt
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - appnet
 
 networks:
   appnet:
     driver: bridge
+<<<<<<< HEAD
+=======
+
+volumes:
+  redis-data:
+>>>>>>> 536bd0f (updated files)

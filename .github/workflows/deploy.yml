@@ -1,0 +1,134 @@
+name: Application Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker-compose.yml'
+      - 'auth-api/**'
+      - 'todos-api/**'
+      - 'users-api/**'
+      - 'frontend/**'
+      - 'log-message-processor/**'
+      - 'traefik/**'
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_TAG: ${{ github.sha }}
+  AWS_REGION: us-west-1
+
+jobs:
+  detect-changes:
+    name: Detect What Changed
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.changes.outputs.frontend }}
+      auth-api: ${{ steps.changes.outputs.auth-api }}
+      todos-api: ${{ steps.changes.outputs.todos-api }}
+      users-api: ${{ steps.changes.outputs.users-api }}
+      log-processor: ${{ steps.changes.outputs.log-processor }}
+      any-changed: ${{ steps.changes.outputs.any-changed }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes for each service
+        id: changes
+        run: |
+          for service in frontend auth-api todos-api users-api log-message-processor; do
+            if git diff HEAD~1 HEAD --name-only | grep -qE "^$service/|docker-compose.yml|Dockerfile"; then
+              echo "$service=true" >> $GITHUB_OUTPUT
+            else
+              echo "$service=false" >> $GITHUB_OUTPUT
+            fi
+          done
+          echo "any-changed=true" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.any-changed == 'true'
+    strategy:
+      matrix:
+        service: [frontend, auth-api, todos-api, users-api, log-message-processor]
+      max-parallel: 3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image for ${{ matrix.service }}
+        if: needs.detect-changes.outputs[matrix.service] == 'true'
+        uses: docker/build-push-action@v4
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          push: false
+          tags: ${{ matrix.service }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build]
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.any-changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --- Get instance IP and URL from Terraform infra workflow ---
+      - name: Get EC2 Instance Info
+        id: ec2
+        run: |
+          echo "instance_ip=${{ github.event.workflow_run.outputs.instance_ip || 'NOT_SET' }}" >> $GITHUB_OUTPUT
+          echo "application_url=${{ github.event.workflow_run.outputs.application_url || 'NOT_SET' }}" >> $GITHUB_OUTPUT
+          
+      - name: Setup SSH Connection
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ steps.ec2.outputs.instance_ip }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy Application via Docker Compose
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@${{ steps.ec2.outputs.instance_ip }} << 'DEPLOY_SCRIPT'
+          set -e
+          cd /opt/todo-app
+          git pull origin main
+          docker-compose pull || true
+          docker-compose build --no-cache
+          docker-compose down || true
+          docker-compose up -d
+          sleep 10
+          docker-compose ps
+          DEPLOY_SCRIPT
+
+      - name: Send Deployment Success Email
+        uses: davisiqbal/gmail-action@v0.0.9
+        with:
+          to: ${{ secrets.EMAIL_FOR_ALERTS }}
+          subject: "Application Deployment Successful"
+          body: |
+            Deployment completed successfully! 🚀
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Instance IP: ${{ steps.ec2.outputs.instance_ip }}
+            Application URL: ${{ steps.ec2.outputs.application_url }}
+            Services Updated:
+            - Frontend: ${{ needs.detect-changes.outputs.frontend }}
+            - Auth API: ${{ needs.detect-changes.outputs.auth-api }}
+            - Todos API: ${{ needs.detect-changes.outputs.todos-api }}
+            - Users API: ${{ needs.detect-changes.outputs.users-api }}
+            - Log Processor: ${{ needs.detect-changes.outputs.log-processor }}
