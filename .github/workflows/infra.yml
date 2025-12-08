@@ -13,6 +13,8 @@ env:
   AWS_REGION: us-west-1
   TF_VERSION: 1.6.0
   WORKING_DIR: infra/terraform
+  TF_INPUT: false  # Disable interactive prompts
+  TF_IN_AUTOMATION: true
 
 jobs:
   terraform-plan:
@@ -20,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
+    
+    # Add timeout to prevent hanging
+    timeout-minutes: 15
       
     steps:
       - name: Checkout code
@@ -36,16 +41,24 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false  # Disable wrapper for cleaner output
 
-      - name: Terraform Init
-        working-directory: ${{ env.WORKING_DIR }}
-        run: terraform init
+      # Cache Terraform plugins to speed up runs
+      - name: Cache Terraform
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ env.WORKING_DIR }}/.terraform
+            ${{ env.WORKING_DIR }}/.terraform.lock.hcl
+          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
 
       - name: Create terraform.tfvars
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           cat > terraform.tfvars <<EOF
-          aws_region           = "${{ secrets.AWS_REGION }}"
+          aws_region           = "${{ env.AWS_REGION }}"
           instance_type        = "t2.small"
           key_name             = "${{ secrets.AWS_KEY_NAME }}"
           domain_name          = "seyitan.mooo.com"
@@ -54,38 +67,74 @@ jobs:
           github_repo_url      = "${{ github.server_url }}/${{ github.repository }}"
           allowed_ssh_cidr     = "0.0.0.0/0"
           EOF
+          
+          echo "terraform.tfvars created"
+          cat terraform.tfvars
+
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -input=false \
+            -upgrade=false \
+            -lock-timeout=5m
+
+      - name: Terraform Validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
 
       - name: Terraform Plan
         id: plan
         working-directory: ${{ env.WORKING_DIR }}
+        timeout-minutes: 10
         run: |
-          terraform plan -detailed-exitcode -out=tfplan 2>&1 | tee plan_output.txt || true
+          set +e  # Don't exit on error
           
-          # Check if there are ANY changes (add, change, or destroy with non-zero values)
-          if grep -q "Plan: 0 to add, 0 to change, 0 to destroy" plan_output.txt; then
-            echo "DEBUG: No changes detected"
+          # Run terraform plan with timeout
+          terraform plan \
+            -detailed-exitcode \
+            -out=tfplan \
+            -lock-timeout=5m \
+            -parallelism=20 \
+            -input=false \
+            2>&1 | tee plan_output.txt
+          
+          PLAN_EXIT_CODE=$?
+          
+          echo "Terraform plan exit code: $PLAN_EXIT_CODE"
+          
+          # Exit codes: 0 = no changes, 1 = error, 2 = changes present
+          if [ $PLAN_EXIT_CODE -eq 0 ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            echo "DEBUG: Changes detected in plan"
+            echo "No infrastructure changes detected"
+            exit 0
+          elif [ $PLAN_EXIT_CODE -eq 2 ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Infrastructure changes detected"
+            exit 0
+          else
+            echo "Terraform plan failed with exit code $PLAN_EXIT_CODE"
+            cat plan_output.txt
+            exit 1
           fi
-          
-          exit 0
 
       - name: Show Terraform Plan
+        if: steps.plan.outputs.has_changes == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform show tfplan
 
       - name: Debug Outputs
         run: |
-          echo "Plan exit code: ${{ steps.plan.outputs.exit_code }}"
           echo "Has changes: ${{ steps.plan.outputs.has_changes }}"
           
       - name: Upload Terraform Plan
+        if: steps.plan.outputs.has_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
-          path: ${{ env.WORKING_DIR }}/tfplan
+          path: |
+            ${{ env.WORKING_DIR }}/tfplan
+            ${{ env.WORKING_DIR }}/plan_output.txt
           retention-days: 5
 
       - name: Send Drift Detection Email
@@ -98,7 +147,7 @@ jobs:
           password: ${{ secrets.SMTP_PASSWORD }}
           subject: "Infrastructure Drift Detected - Approval Required"
           to: ${{ secrets.EMAIL_FOR_ALERTS }}
-          from: DevOps CI/CD Pipeline
+          from: DevOps CI/CD Pipeline <${{ secrets.SMTP_USERNAME }}>
           body: |
             Infrastructure drift has been detected in the TODO application.
       
@@ -107,8 +156,8 @@ jobs:
               - Commit: ${{ github.sha }}
               - Triggered by: ${{ github.actor }}
       
-              Please review the changes and approve the deployment:
-              ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Please review the changes and approve the deployment:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   wait-for-approval:
     name: Wait for Manual Approval
@@ -117,6 +166,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
+    timeout-minutes: 1440  # 24 hours max wait
     
     steps:
       - name: Approval Required
@@ -132,6 +182,7 @@ jobs:
       needs.terraform-plan.result == 'success' &&
       (needs.terraform-plan.outputs.has_changes == 'false' || needs.wait-for-approval.result == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     
     steps:
       - name: Checkout code
@@ -148,16 +199,24 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
-      - name: Terraform Init
-        working-directory: ${{ env.WORKING_DIR }}
-        run: terraform init
+      # Restore Terraform cache
+      - name: Cache Terraform
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ env.WORKING_DIR }}/.terraform
+            ${{ env.WORKING_DIR }}/.terraform.lock.hcl
+          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
 
       - name: Create terraform.tfvars
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           cat > terraform.tfvars <<EOF
-          aws_region           = "${{ secrets.AWS_REGION }}"
+          aws_region           = "${{ env.AWS_REGION }}"
           instance_type        = "t2.medium"
           key_name             = "${{ secrets.AWS_KEY_NAME }}"
           domain_name          = "mytodos.mooo.com"
@@ -166,6 +225,14 @@ jobs:
           github_repo_url      = "${{ github.server_url }}/${{ github.repository }}"
           allowed_ssh_cidr     = "0.0.0.0/0"
           EOF
+
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -input=false \
+            -upgrade=false \
+            -lock-timeout=5m
 
       - name: Setup SSH Key
         run: |
@@ -180,7 +247,12 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform apply -auto-approve
+        run: |
+          terraform apply \
+            -auto-approve \
+            -input=false \
+            -lock-timeout=5m \
+            -parallelism=20
 
       - name: Get Outputs
         working-directory: ${{ env.WORKING_DIR }}
