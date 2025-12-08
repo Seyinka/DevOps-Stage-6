@@ -114,7 +114,6 @@ resource "aws_instance" "todo_app_server" {
   tags = {
     Name = var.app_name
     App  = var.app_name
-    description = "todo-app"
   }
 
   lifecycle {
