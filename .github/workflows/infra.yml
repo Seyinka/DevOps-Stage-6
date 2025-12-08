@@ -66,6 +66,7 @@ jobs:
           email_for_alerts     = "${{ secrets.EMAIL_FOR_ALERTS }}"
           github_repo_url      = "${{ github.server_url }}/${{ github.repository }}"
           allowed_ssh_cidr     = "0.0.0.0/0"
+          root_volume_size     = 20
           EOF
           
           echo "terraform.tfvars created"
@@ -224,6 +225,7 @@ jobs:
           email_for_alerts     = "${{ secrets.EMAIL_FOR_ALERTS }}"
           github_repo_url      = "${{ github.server_url }}/${{ github.repository }}"
           allowed_ssh_cidr     = "0.0.0.0/0"
+          root_volume_size     = 20
           EOF
 
       - name: Terraform Init

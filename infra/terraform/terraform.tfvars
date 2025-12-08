@@ -26,3 +26,5 @@ key_name = "hng-key"
 
 # Email for drift detection / alerts
 email_alerts = "syinka44@gmail.com"
+
+root_volume_size  = 20
