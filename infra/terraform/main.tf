@@ -25,7 +25,7 @@ provider "aws" {
 # SSH Key Pair
 resource "aws_key_pair" "ssh_key" {
   key_name   = var.key_name
-  public_key = file("${var.ssh_private_key_path}.pub")
+  public_key = var.ssh_public_key  # Use the variable directly, not file()
 }
 
 # Get default VPC

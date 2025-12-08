@@ -32,11 +32,9 @@ variable "app_domain" {
   default     = "seyitan.mooo.com"
 }
 
-# SSH Private Key Path
-variable "ssh_private_key_path" {
-  description = "Path to SSH private key"
+variable "ssh_public_key" {
+  description = "SSH public key content"
   type        = string
-  default     = "~/.ssh/id_rsa"
 }
 
 # Allowed CIDR for SSH
