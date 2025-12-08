@@ -97,13 +97,13 @@ jobs:
       - name: Setup SSH Connection
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ steps.ec2.outputs.instance_ip }} >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Deploy Application via Docker Compose
         run: |
-          ssh -i ~/.ssh/deploy_key ubuntu@${{ steps.ec2.outputs.instance_ip }} << 'DEPLOY_SCRIPT'
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ steps.ec2.outputs.instance_ip }} << 'DEPLOY_SCRIPT'
           set -e
           cd /opt/todo-app
           git pull origin main
