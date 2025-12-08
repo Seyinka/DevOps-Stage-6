@@ -5,130 +5,101 @@ on:
     branches:
       - main
     paths:
-      - 'docker-compose.yml'
+      - 'frontend/**'
       - 'auth-api/**'
       - 'todos-api/**'
       - 'users-api/**'
-      - 'frontend/**'
       - 'log-message-processor/**'
+      - 'docker-compose.yml'
       - 'traefik/**'
   workflow_dispatch:
 
-env:
-  REGISTRY: docker.io
-  IMAGE_TAG: ${{ github.sha }}
-  AWS_REGION: us-west-1
-
 jobs:
-  detect-changes:
-    name: Detect What Changed
+  deploy-application:
+    name: Deploy Application
     runs-on: ubuntu-latest
-    outputs:
-      frontend: ${{ steps.changes.outputs.frontend }}
-      auth-api: ${{ steps.changes.outputs.auth-api }}
-      todos-api: ${{ steps.changes.outputs.todos-api }}
-      users-api: ${{ steps.changes.outputs.users-api }}
-      log-processor: ${{ steps.changes.outputs.log-processor }}
-      any-changed: ${{ steps.changes.outputs.any-changed }}
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          fetch-depth: 0
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Detect changes for each service
-        id: changes
-        run: |
-          for service in frontend auth-api todos-api users-api log-message-processor; do
-            if git diff HEAD~1 HEAD --name-only | grep -qE "^$service/|docker-compose.yml|Dockerfile"; then
-              echo "$service=true" >> $GITHUB_OUTPUT
-            else
-              echo "$service=false" >> $GITHUB_OUTPUT
-            fi
-          done
-          echo "any-changed=true" >> $GITHUB_OUTPUT
-
-  build:
-    name: Build Docker Images
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.any-changed == 'true'
-    strategy:
-      matrix:
-        service: [frontend, auth-api, todos-api, users-api, log-message-processor]
-      max-parallel: 3
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Build Docker image for ${{ matrix.service }}
-        if: needs.detect-changes.outputs[matrix.service] == 'true'
-        uses: docker/build-push-action@v4
+      - name: Setup Terraform (to get instance IP)
+        uses: hashicorp/setup-terraform@v3
         with:
-          context: ./${{ matrix.service }}
-          file: ./${{ matrix.service }}/Dockerfile
-          push: false
-          tags: ${{ matrix.service }}:${{ env.IMAGE_TAG }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          terraform_version: 1.6.0
 
-  deploy:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [detect-changes, build]
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.any-changed == 'true'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # --- Get instance IP and URL from Terraform infra workflow ---
-      - name: Get EC2 Instance Info
-        id: ec2
+      - name: Get Server IP from Terraform
+        id: get_ip
+        working-directory: infra/terraform
         run: |
-          echo "instance_ip=${{ github.event.workflow_run.outputs.instance_ip || 'NOT_SET' }}" >> $GITHUB_OUTPUT
-          echo "application_url=${{ github.event.workflow_run.outputs.application_url || 'NOT_SET' }}" >> $GITHUB_OUTPUT
-          
-      - name: Setup SSH Connection
+          terraform init
+          echo "instance_ip=$(terraform output -raw instance_public_ip)" >> $GITHUB_OUTPUT
+
+      - name: Setup SSH Key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ steps.ec2.outputs.instance_ip }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H ${{ steps.get_ip.outputs.instance_ip }} >> ~/.ssh/known_hosts
 
-      - name: Deploy Application via Docker Compose
+      - name: Install Ansible
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ steps.ec2.outputs.instance_ip }} << 'DEPLOY_SCRIPT'
-          set -e
-          cd /opt/todo-app
-          git pull origin main
-          docker-compose pull || true
-          docker-compose build --no-cache
-          docker-compose down || true
-          docker-compose up -d
-          sleep 10
-          docker-compose ps
-          DEPLOY_SCRIPT
+          sudo apt-get update
+          sudo apt-get install -y ansible
 
-      - name: Send Deployment Success Email
-        uses: davisiqbal/gmail-action@v0.0.9
+      - name: Deploy Application with Ansible
+        working-directory: infra/ansible
+        run: |
+          # Create temporary inventory
+          cat > inventory.ini <<EOF
+          [todo_servers]
+          todo_app_server ansible_host=${{ steps.get_ip.outputs.instance_ip }}
+          
+          [todo_servers:vars]
+          ansible_user=ubuntu
+          ansible_ssh_private_key_file=~/.ssh/id_rsa
+          ansible_python_interpreter=/usr/bin/python3
+          domain_name=seyitan.mooo.com
+          github_repo_url=${{ github.server_url }}/${{ github.repository }}
+          app_directory=/home/ubuntu/app
+          EOF
+          
+          # Run only the deploy role
+          ansible-playbook -i inventory.ini playbook.yml --tags deploy
+
+      - name: Verify Deployment
+        run: |
+          sleep 30  # Wait for services to start
+          curl -f https://seyitan.mooo.com || echo "Application not yet accessible"
+
+      - name: Send Deployment Email
+        if: always()
+        uses: dawidd6/action-send-mail@v3
         with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: ${{ job.status == 'success' && 'Application Deployed Successfully' || 'Application Deployment Failed' }}
           to: ${{ secrets.EMAIL_FOR_ALERTS }}
-          subject: "Application Deployment Successful"
+          from: DevOps Automation <${{ secrets.SMTP_USERNAME }}>
           body: |
-            Deployment completed successfully! 
-            Branch: ${{ github.ref }}
+            Application deployment ${{ job.status }}!
+            
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
             Commit: ${{ github.sha }}
-            Instance IP: ${{ steps.ec2.outputs.instance_ip }}
-            Application URL: ${{ steps.ec2.outputs.application_url }}
-            Services Updated:
-            - Frontend: ${{ needs.detect-changes.outputs.frontend }}
-            - Auth API: ${{ needs.detect-changes.outputs.auth-api }}
-            - Todos API: ${{ needs.detect-changes.outputs.todos-api }}
-            - Users API: ${{ needs.detect-changes.outputs.users-api }}
-            - Log Processor: ${{ needs.detect-changes.outputs.log-processor }}
+            Triggered by: ${{ github.actor }}
+            
+            Application URL: https://seyitan.mooo.com
+            
+            ${{ job.status == 'success' && 'Your application has been updated and is live!' || 'Check the workflow logs for error details.' }}
+            
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

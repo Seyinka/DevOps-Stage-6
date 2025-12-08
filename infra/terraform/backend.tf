@@ -1,4 +1,4 @@
-# Remote backend for state management
+# Remote backend for management state
 terraform {
     backend "s3" {
         bucket         = "devops-stage6-terraform-state-seyitan"  
