@@ -14,25 +14,31 @@ services:
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
-
+  
   auth-api:
     build: ./auth-api
     networks:
       - appnet
     environment:
-      - AUTH_API_PORT=8081
-      - USERS_API_ADDRESS=http://users-api:8083
+      - AUTH_API_PORT=8080
+      - USERS_API_ADDRESS=http://users-api:8080
       - JWT_SECRET=myfancysecret
     labels:
       - "traefik.enable=true"
+      # Main auth-api route with /api/auth prefix
       - "traefik.http.routers.auth-api.rule=Host(`seyitan.mooo.com`) && PathPrefix(`/api/auth`)"
       - "traefik.http.routers.auth-api.entrypoints=web,websecure"
       - "traefik.http.routers.auth-api.priority=10"
       - "traefik.http.routers.auth-api.middlewares=auth-strip"
       - "traefik.http.middlewares.auth-strip.stripprefixregex.regex=^/api/auth"
       - "traefik.http.routers.auth-api.tls.certresolver=letsencrypt"
+      # Legacy route for /login and /register (without prefix stripping)
+      - "traefik.http.routers.auth-api-legacy.rule=Host(`seyitan.mooo.com`) && (PathPrefix(`/login`) || PathPrefix(`/register`) || PathPrefix(`/verify`))"
+      - "traefik.http.routers.auth-api-legacy.entrypoints=web,websecure"
+      - "traefik.http.routers.auth-api-legacy.priority=10"
+      - "traefik.http.routers.auth-api-legacy.tls.certresolver=letsencrypt"
       - "traefik.http.services.auth-api.loadbalancer.server.port=8080"
-
+  
   todos-api:
     build: ./todos-api
     networks:
@@ -45,31 +51,43 @@ services:
       - JWT_SECRET=myfancysecret
     labels:
       - "traefik.enable=true"
+      # Main todos-api route with /api/todos prefix
       - "traefik.http.routers.todos-api.rule=Host(`seyitan.mooo.com`) && PathPrefix(`/api/todos`)"
       - "traefik.http.routers.todos-api.entrypoints=web,websecure"
       - "traefik.http.routers.todos-api.priority=10"
       - "traefik.http.routers.todos-api.middlewares=todos-strip"
       - "traefik.http.middlewares.todos-strip.stripprefixregex.regex=^/api/todos"
       - "traefik.http.routers.todos-api.tls.certresolver=letsencrypt"
+      # Legacy route for /todos (without prefix stripping)
+      - "traefik.http.routers.todos-api-legacy.rule=Host(`seyitan.mooo.com`) && PathPrefix(`/todos`)"
+      - "traefik.http.routers.todos-api-legacy.entrypoints=web,websecure"
+      - "traefik.http.routers.todos-api-legacy.priority=10"
+      - "traefik.http.routers.todos-api-legacy.tls.certresolver=letsencrypt"
       - "traefik.http.services.todos-api.loadbalancer.server.port=8082"
-
+  
   users-api:
     build: ./users-api
     networks:
       - appnet
     environment:
       - JWT_SECRET=myfancysecret
-      - SERVER_PORT=8083
+      - SERVER_PORT=8080
     labels:
       - "traefik.enable=true"
+      # Main users-api route with /api/users prefix
       - "traefik.http.routers.users-api.rule=Host(`seyitan.mooo.com`) && PathPrefix(`/api/users`)"
       - "traefik.http.routers.users-api.entrypoints=web,websecure"
       - "traefik.http.routers.users-api.priority=10"
       - "traefik.http.routers.users-api.middlewares=users-strip"
       - "traefik.http.middlewares.users-strip.stripprefixregex.regex=^/api/users"
       - "traefik.http.routers.users-api.tls.certresolver=letsencrypt"
+      # Legacy route for /users (without prefix stripping)
+      - "traefik.http.routers.users-api-legacy.rule=Host(`seyitan.mooo.com`) && PathPrefix(`/users`)"
+      - "traefik.http.routers.users-api-legacy.entrypoints=web,websecure"
+      - "traefik.http.routers.users-api-legacy.priority=10"
+      - "traefik.http.routers.users-api-legacy.tls.certresolver=letsencrypt"
       - "traefik.http.services.users-api.loadbalancer.server.port=8080"
-
+  
   log-message-processor:
     build: ./log-message-processor
     networks:
@@ -78,12 +96,12 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_CHANNEL=log_channel
-
+  
   redis:
     image: redis:7-alpine
     networks:
       - appnet
-
+  
   traefik:
     image: traefik:latest
     command:
