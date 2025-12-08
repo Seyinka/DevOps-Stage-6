@@ -121,7 +121,7 @@ jobs:
           to: ${{ secrets.EMAIL_FOR_ALERTS }}
           subject: "Application Deployment Successful"
           body: |
-            Deployment completed successfully! 🚀
+            Deployment completed successfully! 
             Branch: ${{ github.ref }}
             Commit: ${{ github.sha }}
             Instance IP: ${{ steps.ec2.outputs.instance_ip }}
